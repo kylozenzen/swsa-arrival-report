@@ -15,13 +15,22 @@ function json(data, status = 200) {
   });
 }
 
+function configuredPasswords() {
+  return [process.env.SHIFT_ADMIN_PASSWORD, process.env.ARRIVAL_DESK_ADMIN_PASSWORD]
+    .map(value => String(value || "").trim())
+    .filter(Boolean);
+}
+
 function authorized(req) {
-  const expected = process.env.ARRIVAL_DESK_ADMIN_PASSWORD || "";
-  const supplied = req.headers.get("x-arrival-admin") || "";
-  if (!expected || !supplied) return false;
-  const a = Buffer.from(expected);
+  const supplied = String(
+    req.headers.get("x-arrival-admin") || req.headers.get("x-admin-password") || ""
+  ).trim();
+  if (!supplied) return false;
   const b = Buffer.from(supplied);
-  return a.length === b.length && timingSafeEqual(a, b);
+  return configuredPasswords().some(expected => {
+    const a = Buffer.from(expected);
+    return a.length === b.length && timingSafeEqual(a, b);
+  });
 }
 
 function validateConfig(config) {
@@ -56,6 +65,12 @@ export default async (req) => {
   }
 
   if (req.method !== "POST") return json({ error: "Method not allowed." }, 405);
+  if (!configuredPasswords().length) {
+    return json({
+      error: "Admin password is not configured. Add SHIFT_ADMIN_PASSWORD or ARRIVAL_DESK_ADMIN_PASSWORD in Netlify environment variables, include Functions scope if available, then redeploy.",
+      code: "ADMIN_PASSWORD_NOT_CONFIGURED"
+    }, 503);
+  }
   if (!authorized(req)) return json({ error: "Incorrect admin password." }, 401);
 
   let body;
