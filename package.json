@@ -1,0 +1,9 @@
+{
+  "name": "arrival-desk-shared-admin",
+  "private": true,
+  "version": "3.0.0",
+  "type": "module",
+  "dependencies": {
+    "@netlify/blobs": "latest"
+  }
+}
