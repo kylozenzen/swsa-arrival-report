@@ -221,7 +221,7 @@
       </div>
       <div id="adminEditor" hidden>
         <div class="admin-toolbar">
-          <div class="left"><button type="button" id="adminAdd">+ Add tour</button><button type="button" class="ghost" id="adminReload">Reload shared config</button></div>
+          <div class="left"><button type="button" id="adminAdd">+ Add tour</button><button type="button" class="ghost" id="adminReload">Reload shared config</button><button type="button" class="ghost" id="adminDownload">Download offline copy</button></div>
           <div class="right"><button type="button" class="ghost" id="adminReset">Use built-in defaults</button><button type="button" class="secondary" id="adminSave">Save shared changes</button></div>
         </div>
         <div class="admin-message" id="adminMsg">Changes here are only shared after you press Save shared changes.</div>
@@ -1079,6 +1079,29 @@ async function unlockAdmin(){
     adminPasswordMemory=pass; $("#adminLogin").hidden=true; $("#adminEditor").hidden=false; adminWorkingConfig=cloneJSON(TOUR_CONFIG); renderAdminTours();
   }catch(err){ msg.textContent=err.message; msg.className="admin-message err"; }
 }
+async function downloadOfflineCopy(){
+  const msg=$("#adminMsg"), btn=$("#adminDownload");
+  msg.textContent="Loading the latest shared tours…"; msg.className="admin-message"; btn.disabled=true;
+  try{
+    await loadSharedTourConfig({forAdmin:true});
+    adminWorkingConfig=cloneJSON(TOUR_CONFIG); renderAdminTours();
+    const sourceRes=await fetch(location.href,{cache:"no-store"});
+    if(!sourceRes.ok) throw new Error(`Could not read the current Arrival Desk HTML (${sourceRes.status}).`);
+    let source=await sourceRes.text();
+    const baked=`const BUILTIN_TOUR_CONFIG = ${JSON.stringify(TOUR_CONFIG,null,2)};\n\nfunction cloneJSON`;
+    const marker=/const BUILTIN_TOUR_CONFIG = \[[\s\S]*?\n\];\n\nfunction cloneJSON/;
+    if(!marker.test(source)) throw new Error("Could not locate the built-in tour configuration in this build.");
+    source=source.replace(marker,baked);
+    const blob=new Blob([source],{type:"text/html;charset=utf-8"});
+    const a=document.createElement("a");
+    const stamp=new Date().toLocaleDateString("en-CA",{timeZone:"America/Chicago"});
+    a.href=URL.createObjectURL(blob); a.download=`arrival-desk-offline-${stamp}.html`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    msg.textContent=`Downloaded an offline HTML copy with the latest ${TOUR_CONFIG.length} saved tours baked in.`; msg.className="admin-message ok";
+  }catch(err){ msg.textContent=err.message; msg.className="admin-message err"; }
+  finally{ btn.disabled=false; }
+}
 async function saveAdmin(){
   const msg=$("#adminMsg"), btn=$("#adminSave"); msg.textContent="Saving shared tour config…"; msg.className="admin-message"; btn.disabled=true;
   try{
@@ -1101,6 +1124,7 @@ $("#adminPassword").addEventListener("keydown",e=>{if(e.key==="Enter")unlockAdmi
 $("#adminAdd").onclick=()=>{adminWorkingConfig.push(newTour());renderAdminTours();const tours=$("#adminTours").querySelectorAll("details");tours[tours.length-1]?.setAttribute("open","");};
 $("#adminReset").onclick=()=>{if(confirm("Replace the editor with the built-in tour defaults? Nothing is shared until you save.")){adminWorkingConfig=normalizeConfig(BUILTIN_TOUR_CONFIG);renderAdminTours();$("#adminMsg").textContent="Built-in defaults loaded into the editor — save to share them.";}};
 $("#adminReload").onclick=async()=>{const msg=$("#adminMsg");try{await loadSharedTourConfig({forAdmin:true});adminWorkingConfig=cloneJSON(TOUR_CONFIG);renderAdminTours();msg.textContent="Reloaded the latest shared tour config.";msg.className="admin-message ok";}catch(err){msg.textContent=err.message;msg.className="admin-message err";}};
+$("#adminDownload").onclick=downloadOfflineCopy;
 $("#adminSave").onclick=saveAdmin;
 loadSharedTourConfig();
 
