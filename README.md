@@ -1,4 +1,4 @@
-# Arrival Desk 3.0 — Shared Tour Admin
+# Arrival Desk 3.1 — Shared Tour Admin
 
 This build keeps daily PDF/report/guest data in browser memory while storing only the shared tour configuration in Netlify Blobs.
 
@@ -24,3 +24,8 @@ Each tour can be enabled/disabled or removed, renamed, matched against report te
 ## Local HTML behavior
 
 If `index.html` is opened with `file://`, the built-in tour defaults still load, but shared Admin editing is intentionally unavailable because Netlify Functions/Blobs require the deployed site.
+
+
+## v3.1 UI note
+
+The public header no longer shows tour-config loading/shared/fallback status. The fallback remains automatic and silent for desk users; configuration errors are surfaced only inside Admin where they are actionable.

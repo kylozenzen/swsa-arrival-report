@@ -159,9 +159,6 @@
 
   /* v3 shared tour admin */
   .admin-launch{background:#fff;color:var(--ink);border-color:var(--rule);padding:7px 10px;font:700 10px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.08em}
-  .config-status{font:600 10px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.07em;color:var(--slate);background:#fff;border:1px solid var(--rule);padding:6px 8px;border-radius:2px}
-  .config-status.live{color:var(--kelp);border-color:#9fc4b8;background:var(--kelp-soft)}
-  .config-status.warn{color:var(--alert);border-color:#e6b39f;background:var(--alert-soft)}
   dialog.admin-dialog{width:min(960px,calc(100vw - 24px));max-height:92vh;padding:0;border:1px solid var(--rule);border-radius:6px;box-shadow:0 24px 80px rgba(16,32,43,.25);color:var(--ink);background:var(--paper)}
   dialog.admin-dialog::backdrop{background:rgba(16,32,43,.55)}
   .admin-head{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px 18px;background:var(--ink);color:#fff}
@@ -181,7 +178,7 @@
   .admin-mode{margin-top:14px;border:1px solid var(--rule);border-radius:4px;overflow:hidden}.admin-mode h4{margin:0;padding:9px 11px;background:var(--paper);font:700 11px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.08em}.admin-mode .inside{padding:11px}
   .admin-help{margin-top:5px;color:var(--slate);font-size:11px;line-height:1.35}.admin-danger{background:#fff;color:var(--alert);border-color:#d8a28f}.admin-divider{height:1px;background:var(--rule);margin:14px 0}
   .admin-email-custom{margin-top:10px;padding-top:10px;border-top:1px dashed var(--rule)}
-  @media(max-width:700px){.admin-grid{grid-template-columns:1fr}.admin-grid .wide{grid-column:auto}.config-status{order:5}.admin-launch{order:6}.admin-toolbar{align-items:stretch}.admin-toolbar .left,.admin-toolbar .right{width:100%}.admin-toolbar button{flex:1}.admin-row button{width:100%}}
+  @media(max-width:700px){.admin-grid{grid-template-columns:1fr}.admin-grid .wide{grid-column:auto}.admin-launch{order:5}.admin-toolbar{align-items:stretch}.admin-toolbar .left,.admin-toolbar .right{width:100%}.admin-toolbar button{flex:1}.admin-row button{width:100%}}
 
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -192,8 +189,7 @@
     <h1>Arrival Desk</h1>
     <span class="sub">Specialty Arrival Report → tomorrow prep</span>
     <span class="pill">Offline · nothing leaves this device</span>
-    <span class="quiet">Build 3.0 · shared tour admin</span>
-    <span class="config-status" id="configStatus">Tour config · loading</span>
+    <span class="quiet">Build 3.1</span>
     <button type="button" class="admin-launch" id="adminBtn">Admin</button>
   </header>
 
