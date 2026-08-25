@@ -417,7 +417,7 @@ const BUILTIN_TOUR_CONFIG = [
   {key:"vip",name:"Ultimate VIP Tour",match:"ultimate vip",active:true,modes:["operational"],
    checkin:{operational:{type:"report",fallback:""},nonop:{type:"report",fallback:""}},
    notes:{operational:["Check in beside the security arches — \"VIP Tour Meets Here\" sign.","Send the complimentary parking pass.","Under 18 needs a paid adult. No observers."],nonop:[]},
-   directions:{operational:false,nonop:false},security:{operational:{enabled:false,gate:"",time:""},nonop:{enabled:false,gate:"",time:""}},email:{operational:{templateKey:"vip"},nonop:{templateKey:"vip"}}},
+   directions:{operational:false,nonop:false},security:{operational:{enabled:true,gate:"Gate 1",time:"10:30"},nonop:{enabled:false,gate:"",time:""}},email:{operational:{templateKey:"vip"},nonop:{templateKey:"vip"}}},
   {key:"allswim",name:"All-Swim Interaction Program",match:"all[\\s–—-]*swim",active:true,modes:["nonop"],
    checkin:{operational:{type:"fixed",value:"9:30 AM"},nonop:{type:"fixed",value:"9:30 AM"}},
    notes:{operational:[],nonop:["Employee entrance / Gate 4 — do NOT go to the main entrance.","Check in at 9:30 AM. Program begins at 9:45 AM and ends at 2:30 PM. Late arrivals are not admitted.","Includes Beluga, Sea Lion, and Dolphin Swim programs. All participants must be 48\" or taller.","Bring a swimsuit; a jacket/sweatshirt that can get a little wet is recommended.","Remove all jewelry, piercings, and hair accessories. No observers."]},
