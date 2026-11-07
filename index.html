@@ -912,10 +912,12 @@ function downloadDirections(){
 }
 
 
-/* ---- Outlook on the web: open a compose window with To + Subject already in it ---- */
+/* ---- Outlook on the web: open a compose window with To, Cc + Subject already in it ---- */
+const EDUCATION_CC = "swsaeducation@seaworld.com";
 function openOutlook(to, subject){
   const url = "https://outlook.office.com/mail/deeplink/compose"
             + "?to=" + encodeURIComponent(to || "")
+            + "&cc=" + encodeURIComponent(EDUCATION_CC)
             + "&subject=" + encodeURIComponent(subject || "");
   window.open(url, "_blank", "noopener");
 }
@@ -959,7 +961,7 @@ function buildEml(to, subject, html, attachments=[]){
   const related = "----arrivaldesk-related-" + stamp;
   const wrap = str => String(str).replace(/(.{76})/g, "$1\r\n");
   let eml =
-    `To: ${to || ""}\r\nSubject: ${subject}\r\nX-Unsent: 1\r\nMIME-Version: 1.0\r\n` +
+    `To: ${to || ""}\r\nCc: ${EDUCATION_CC}\r\nSubject: ${subject}\r\nX-Unsent: 1\r\nMIME-Version: 1.0\r\n` +
     `Content-Type: multipart/mixed; boundary="${outer}"\r\n\r\n` +
     `--${outer}\r\nContent-Type: multipart/related; boundary="${related}"\r\n\r\n` +
     `--${related}\r\nContent-Type: text/html; charset="utf-8"\r\nContent-Transfer-Encoding: 8bit\r\n\r\n` +
