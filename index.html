@@ -533,9 +533,13 @@ function programNameFromHeader(text){
   const raw = di > 0 ? parts[di-1] : (parts.length > 1 ? parts[parts.length-1] : "");
   return raw.replace(DATE,"").replace(CLOCK,"").replace(/\s+/g," ").trim();
 }
+// Animal-interaction slots (dolphin, sea lion, beluga…) are handled by the trainers, not the desk.
+// Only applies to programs NOT set up in Admin — Penguins On Ice / All-Swim are matched first.
+const SKIP_UNCONFIGURED = /\b(interactions?|encounters?)\b/i;
 function genericProgram(text){
   const name = programNameFromHeader(text);
   if(!name || /^all\b/i.test(name)) return null;
+  if(SKIP_UNCONFIGURED.test(name)){ scanned.skipped?.push(name); return null; }
   const key = "x-" + name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
   if(!genericPrograms.has(key)){
     const config = { key, name, generic:true };
@@ -1117,7 +1121,7 @@ const DATE = /\b\d{1,2}\/\d{1,2}\/\d{4}\b/;
 const PHONE = /\(?(\d{3})\)?[\s.\-]{0,2}(\d{3})[\s.\-]{0,2}(\d{4})/;
 const COUNT_LABEL = /^(adult|child|infant|general admission)$/i;
 
-let bookings = [], scanned = { pages:0, programs:[], slots:[], mode:"" }, paintSecurity = () => {};
+let bookings = [], scanned = { pages:0, programs:[], slots:[], skipped:[], mode:"" }, paintSecurity = () => {};
 let activeTourTab = null;
 const workflowState = { security:{ operational:false, nonop:false } };
 function activeBookings(){ return bookings.filter(b => b.prog.modes.includes(dayMode) && inScope(b)); }
@@ -1426,7 +1430,7 @@ function progress(msg, pct){
 async function handle(files){
   files = files.filter(f => f.type === "application/pdf");
   if(!files.length) return;
-  bookings = []; scanned = { pages:0, programs:[], slots:[], mode:"" };
+  bookings = []; scanned = { pages:0, programs:[], slots:[], skipped:[], mode:"" };
   const worker = await Tesseract.createWorker("eng");
   await worker.setParameters({ tessedit_pageseg_mode: "7" }); // one line per crop
 
@@ -1544,7 +1548,7 @@ async function readPage(doc, num, worker){
     // turn those separators into pipes/arrows, while the program name itself remains readable.
     if(!isProgramHeader(text)) continue;
     const def = PROGRAMS.find(p => p.match.test(text)) || genericProgram(text);
-    if(!def){ if(text) scanned.programs.push(text); continue; }
+    if(!def) continue;
     scanned.programs.push(def.name);
 
     const top = headers[h].y1, bottom = headers[h+1] ? headers[h+1].y0 : vp.height;
@@ -1762,11 +1766,14 @@ function render(){
   const h = document.createElement("h2");
   h.textContent = dayMode === "nonop" ? "Non-Op tomorrow prep" : "Operational tomorrow prep";
   out.appendChild(h);
+  const skipped = [...new Set(scanned.skipped || [])];
+  if(skipped.length) out.insertAdjacentHTML("beforeend",
+    `<div class="seen" style="margin:-4px 0 12px;font-size:12px;color:var(--slate)">Hidden — animal interactions handled by trainers: ${esc(skipped.join(" · "))}</div>`);
 
   if(!bookings.length){
     const seen = [...new Set(scanned.programs)].join(" · ") || "nothing";
     out.insertAdjacentHTML("beforeend",
-      `<div class="empty"><b>No reservations could be read from this report.</b>
+      `<div class="empty"><b>${(scanned.skipped||[]).length ? "Nothing on this report needs desk prep." : "No reservations could be read from this report."}</b>
        <div class="seen">Reader: ${scanned.mode === "ocr" ? "OCR fallback" : "PDF text"} · Programs detected: ${esc(seen)}</div>
        <div class="modehint">If this report visibly contains tours, keep the PDF and send it back for parser tuning.</div></div>`);
     return;
