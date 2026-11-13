@@ -86,6 +86,10 @@
   .daybar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
     background:var(--card);border:1px solid var(--rule);border-radius:4px;box-shadow:var(--shadow);
     padding:14px 16px;margin:0 0 16px}
+  .openpick{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--slate)}
+  .openpick select{font:inherit;font-weight:700;color:var(--ink);padding:6px 8px;border:2px solid var(--kelp);border-radius:5px;background:#fff;margin:0 4px}
+  .openbar.off{opacity:.45}
+  .slotlist{margin:8px 0 0;padding-left:18px;font-size:13px}
   .daybar strong{display:block;font-size:14px}.daybar small{display:block;color:var(--slate);margin-top:2px}
   .modepick{display:flex;gap:8px;background:#fff;padding:5px;border:1px solid var(--rule);border-radius:5px}
   .modepick button{position:relative;min-width:150px;border:2px solid transparent;background:var(--paper);color:var(--slate);
@@ -243,9 +247,9 @@
 <div class="wrap">
   <header class="top">
     <h1>Arrival Desk</h1>
-    <span class="sub">Specialty Arrival Report → tomorrow prep</span>
+    <span class="sub">Arrival reports → tomorrow prep</span>
     <span class="pill">Offline · nothing leaves this device</span>
-    <span class="quiet">Build 3.4</span>
+    <span class="quiet">Build 3.5</span>
     <button type="button" class="guide-launch" id="guideBtn">How do I use this?</button>
     <button type="button" class="admin-launch" id="adminBtn">Admin</button>
   </header>
@@ -256,6 +260,14 @@
     <div class="modepick" role="group" aria-label="Tomorrow's park status">
       <button type="button" class="active" data-mode="operational" aria-pressed="true">Operational</button>
       <button type="button" data-mode="nonop" aria-pressed="false">Non-Operational</button>
+    </div>
+  </div>
+
+  <div class="daybar openbar" id="openbar">
+    <div><strong>Park opens tomorrow at</strong><small>Operational days: every tour guests arrive for <b>before</b> this time gets an email + call. Anything arriving after opening is skipped.</small></div>
+    <div class="openpick">
+      <label>Opens <select id="parkOpen" aria-label="Park opening time"></select></label>
+      <label>Security gets tours arriving <select id="secLead" aria-label="Security cutoff"></select> before open</label>
     </div>
   </div>
 
@@ -278,7 +290,7 @@
       <div class="guide-tldr">
         <b>The short version</b>
         <ol>
-          <li>Set tomorrow's park status.</li>
+          <li>Set tomorrow's park status and opening time.</li>
           <li>Drop in tomorrow's Specialty Arrival Report.</li>
           <li>Fix anything flagged in red.</li>
           <li>Work every tab's checklist — call, email, send, lock.</li>
@@ -381,8 +393,8 @@
   </dialog>
 
   <div class="drop" id="drop">
-    <strong>Drop tomorrow's Specialty Arrival Report here</strong>
-    <span>or click to choose — you can add both reports at once</span>
+    <strong>Drop tomorrow's arrival report(s) here</strong>
+    <span>Specialty and Animal Interaction reports both work — add them together</span>
     <input type="file" id="file" accept="application/pdf" multiple hidden>
   </div>
 
@@ -488,6 +500,58 @@ const minutes = t => {
   let h = p.h % 12; if(p.ap === "P") h += 12;
   return h*60 + p.m;
 };
+
+/* ---------------- park opening time ----------------
+   Operational days: a reservation needs prep (email + call) when guests ARRIVE before the park
+   opens. Arrival = the tour's check-in time (Penguins = program time − 30, VIP = report time, …).
+   Security only gets the ones arriving at least `secLead` minutes before opening. */
+const OPEN_CHOICES = ["9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM","12:00 PM","12:30 PM","1:00 PM","1:30 PM","2:00 PM"];
+const LEAD_CHOICES = [0,15,30,45,60,90,120];
+function loadPref(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:v; }catch{ return d; } }
+function savePref(k,v){ try{ localStorage.setItem(k,String(v)); }catch{} }
+let parkOpen = OPEN_CHOICES.includes(loadPref("arrivalDesk.parkOpen","")) ? loadPref("arrivalDesk.parkOpen","") : "10:30 AM";
+let secLead = LEAD_CHOICES.includes(parseInt(loadPref("arrivalDesk.secLead","30"),10)) ? parseInt(loadPref("arrivalDesk.secLead","30"),10) : 30;
+function arrivalTime(b){ return b.prog.checkin ? b.prog.checkin(b) : shift(b.time,-30); }
+function minsBeforeOpen(b){
+  const a = minutes(arrivalTime(b));
+  return a === 9999 ? null : minutes(parkOpen) - a;
+}
+// unknown time → keep it (better to see an extra card than miss a guest)
+function arrivesBeforeOpen(b){ const m = minsBeforeOpen(b); return m === null || m > 0; }
+function inScope(b){
+  if(dayMode === "nonop") return b.prog.key !== "penguin" || minutes(b.time) === 10*60 + 30; // Non-Op penguin = the 10:30 slot only
+  return arrivesBeforeOpen(b);
+}
+function leadLabel(m){ if(m == null) return "time unknown"; const h=Math.floor(m/60), r=m%60; return `${h?h+"h ":""}${r||!h?r+"m":""}`.trim()+" before open"; }
+
+/* programs on the report that aren't set up in Admin still get a card — they just have no
+   saved meeting spot/template yet. One shared definition per program name. */
+const genericPrograms = new Map();
+function programNameFromHeader(text){
+  const parts = String(text).split(/\s*>\s*/).map(x => x.trim()).filter(Boolean);
+  const di = parts.findIndex(x => DATE.test(x));
+  const raw = di > 0 ? parts[di-1] : (parts.length > 1 ? parts[parts.length-1] : "");
+  return raw.replace(DATE,"").replace(CLOCK,"").replace(/\s+/g," ").trim();
+}
+function genericProgram(text){
+  const name = programNameFromHeader(text);
+  if(!name || /^all\b/i.test(name)) return null;
+  const key = "x-" + name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+  if(!genericPrograms.has(key)){
+    const config = { key, name, generic:true };
+    genericPrograms.set(key, {
+      key, name, generic:true, modes:["operational","nonop"], match:/(?!)/, config,
+      checkin: b => shift(b.time, -30),
+      notes: b => [
+        `${name} isn't set up in Admin yet, so there's no saved meeting spot, call notes, or email template. Add it in Admin to fill these in.`,
+        `Assumed arrival ${shift(b.time,-30)} (30 minutes before the ${b.time} start), which is before the park opens. Tell them where to go and how to get past the gate.`
+      ]
+    });
+  }
+  return genericPrograms.get(key);
+}
+// a real program header has the > breadcrumb (or at least a date) — not the "Data Valid as of" footer
+const isProgramHeader = t => !/valid as of|page \d+ of/i.test(t) && (/>/.test(t) || DATE.test(t));
 
 /* ---------------- templates ---------------- */
 const TEMPLATES = {
@@ -1053,17 +1117,24 @@ const DATE = /\b\d{1,2}\/\d{1,2}\/\d{4}\b/;
 const PHONE = /\(?(\d{3})\)?[\s.\-]{0,2}(\d{3})[\s.\-]{0,2}(\d{4})/;
 const COUNT_LABEL = /^(adult|child|infant|general admission)$/i;
 
-let bookings = [], scanned = { pages:0, programs:[], mode:"" }, paintSecurity = () => {};
+let bookings = [], scanned = { pages:0, programs:[], slots:[], mode:"" }, paintSecurity = () => {};
 let activeTourTab = null;
 const workflowState = { security:{ operational:false, nonop:false } };
-function activeBookings(){ return bookings.filter(b => b.prog.modes.includes(dayMode)); }
+function activeBookings(){ return bookings.filter(b => b.prog.modes.includes(dayMode) && inScope(b)); }
 function securityKeys(){ return PROGRAMS.filter(p=>!!modePart(p.config?.security,dayMode,{}).enabled).map(p=>p.key); }
-function securityIncluded(b){
-  b.security ||= {};
-  if(b.security[dayMode] == null) b.security[dayMode] = securityKeys().includes(b.prog.key);
-  return !!b.security[dayMode];
+// Operational: any pre-open tour can go on the Security email; it's checked by default when guests
+// arrive at least `secLead` minutes before opening. Non-Op keeps the per-tour Admin setting.
+function securityEligible(b){ return dayMode === "operational" || securityKeys().includes(b.prog.key); }
+function securityDefault(b){
+  if(dayMode === "operational"){ const m = minsBeforeOpen(b); return m !== null && m >= secLead; }
+  return securityKeys().includes(b.prog.key);
 }
-function setSecurityIncluded(b, val){ b.security ||= {}; b.security[dayMode] = !!val; }
+function securityIncluded(b){
+  b.secOverride ||= {};
+  const o = b.secOverride[dayMode];
+  return o == null ? securityDefault(b) : !!o;
+}
+function setSecurityIncluded(b, val){ b.secOverride ||= {}; b.secOverride[dayMode] = !!val; }
 function taskKeys(b){ return ["call","outlook","paste", ...(needsDirections(b)?["attach"]:[]), "send","lock"]; }
 function ensureTasks(b){
   b.tasks ||= {};
@@ -1102,6 +1173,7 @@ function updateTourTabs(){
 }
 function setDayMode(mode){
   dayMode = mode;
+  document.querySelector("#openbar")?.classList.toggle("off", mode !== "operational");
   document.querySelectorAll("[data-mode]").forEach(btn => {
     const selected = btn.dataset.mode === mode;
     btn.classList.toggle("active", selected);
@@ -1110,6 +1182,13 @@ function setDayMode(mode){
   if(bookings.length) render();
 }
 document.querySelectorAll("[data-mode]").forEach(btn => btn.onclick = () => setDayMode(btn.dataset.mode));
+(function initOpenControls(){
+  const po = document.querySelector("#parkOpen"), sl = document.querySelector("#secLead");
+  po.innerHTML = OPEN_CHOICES.map(t => `<option ${t===parkOpen?"selected":""}>${t}</option>`).join("");
+  sl.innerHTML = LEAD_CHOICES.map(m => `<option value="${m}" ${m===secLead?"selected":""}>${m ? m+" min+" : "any time"}</option>`).join("");
+  po.onchange = () => { parkOpen = po.value; savePref("arrivalDesk.parkOpen", parkOpen); if(bookings.length || scanned.slots?.length) render(); };
+  sl.onchange = () => { secLead = parseInt(sl.value,10); savePref("arrivalDesk.secLead", secLead); if(bookings.length) render(); };
+})();
 const $ = s => document.querySelector(s);
 
 /* ---------------- shared tour config + admin ---------------- */
@@ -1347,7 +1426,7 @@ function progress(msg, pct){
 async function handle(files){
   files = files.filter(f => f.type === "application/pdf");
   if(!files.length) return;
-  bookings = []; scanned = { pages:0, programs:[], mode:"" };
+  bookings = []; scanned = { pages:0, programs:[], slots:[], mode:"" };
   const worker = await Tesseract.createWorker("eng");
   await worker.setParameters({ tessedit_pageseg_mode: "7" }); // one line per crop
 
@@ -1427,6 +1506,9 @@ async function readPage(doc, num, worker){
   const hasText = tc.items.filter(i => i.str && i.str.trim()).length >= 10
                && readableRatio >= 0.55 && privateUseRatio < 0.05;
   scanned.mode = hasText ? "text" : "ocr";
+  // Animal Interaction Arrival Report (RPT_Arrivals_AI): Book Date | Contact (+phone under it) |
+  // Confirmation | Attendee | … | Party Size | Balance | Note Flag. No email column.
+  const aiLayout = hasText && /Attendee/.test(rawText) && /Party/.test(rawText) && /\bBook\b/.test(rawText);
 
   const vp = page.getViewport({ scale: hasText ? 2 : SCALE, rotation: hasText ? 0 : 90 });
   const cv = document.createElement("canvas");
@@ -1460,10 +1542,10 @@ async function readPage(doc, num, worker){
     const text = (await readCell(worker, cv, headers[h])).replace(/\s+/g," ").trim();
     // Match against the whole header rather than depending on the exact > separators. OCR can
     // turn those separators into pipes/arrows, while the program name itself remains readable.
-    const def = PROGRAMS.find(p => p.match.test(text));
-    if(def) scanned.programs.push(def.name);
-    else if(text) scanned.programs.push(text);
-    if(!def) continue;
+    if(!isProgramHeader(text)) continue;
+    const def = PROGRAMS.find(p => p.match.test(text)) || genericProgram(text);
+    if(!def){ if(text) scanned.programs.push(text); continue; }
+    scanned.programs.push(def.name);
 
     const top = headers[h].y1, bottom = headers[h+1] ? headers[h+1].y0 : vp.height;
     const band = runs.filter(r => r.y0 > top - 4 && r.y1 < bottom + 4);
@@ -1480,6 +1562,9 @@ async function readPage(doc, num, worker){
 
     const progDate = text.match(DATE)?.[0] || "";
     const progTime = normalizeClock(text.match(CLOCK)?.[0] || "");
+    scanned.slots.push({ prog:def, time:progTime });
+
+    if(aiLayout){ readAiSection(def, lines, W, cv, progDate, progTime); continue; }
 
     for(let i=0; i<lines.length; i++){
       const cells = lines[i].rs;
@@ -1497,9 +1582,7 @@ async function readPage(doc, num, worker){
       }
 
       const b = { prog: def, date: progDate || dateTxt.match(DATE)[0], time: rowTime, suspect: [] };
-      // Penguin: only the 10:30 slot is ours — skip every other Penguin time outright
-      if(def.key === "penguin" && minutes(rowTime) !== 10*60 + 30) continue;
-      b.security = { operational: minutes(rowTime) < 12*60, nonop: ["uae","animaladventure","penguin","allswim"].includes(def.key) };
+      // which slots need prep is decided at render time from the park-open setting
       b.tasks = { email:false, call:false, lock:false };
       b.name    = await readCell(worker, cv, cells.find(r => inCol(r, W, "name")));
       b.conf    = await readCell(worker, cv, cells.find(r => inCol(r, W, "conf")));
@@ -1543,14 +1626,78 @@ async function readPage(doc, num, worker){
       // a picture of the row, so the reading can be checked against the page
       const rowTop = Math.min(...cells.map(r=>r.y0)) - 8;
       const rowBot = (lines[i+1] ? Math.max(...lines[i+1].rs.map(r=>r.y1)) : Math.max(...cells.map(r=>r.y1))) + 8;
-      const c = document.createElement("canvas");
-      c.width = Math.round(W*0.62); c.height = Math.round(rowBot - rowTop);
-      c.getContext("2d").drawImage(cv, 0, rowTop, c.width, c.height, 0, 0, c.width, c.height);
-      b.crop = c.toDataURL("image/png");
+      b.crop = rowCrop(cv, W, rowTop, rowBot, 0.62);
 
       bookings.push(b);
     }
   }
+}
+
+function rowCrop(cv, W, top, bot, widthRatio){
+  const c = document.createElement("canvas");
+  c.width = Math.round(W*widthRatio); c.height = Math.max(1, Math.round(bot - top));
+  c.getContext("2d").drawImage(cv, 0, top, c.width, c.height, 0, 0, c.width, c.height);
+  return c.toDataURL("image/png");
+}
+
+/* Animal Interaction Arrival Report rows — text layer only (this export always has one).
+   Column bands measured from RPT_Arrivals_AI.prt v4, 792pt landscape page. */
+const AICOL = {
+  date:     [0.000, 0.078],
+  contact:  [0.078, 0.205],  // contact name, phone on the line under it (names can wrap)
+  conf:     [0.205, 0.285],
+  attendee: [0.285, 0.380],
+  party:    [0.660, 0.735],
+  balance:  [0.735, 0.795],
+  flag:     [0.795, 0.835],
+};
+const inAi = (r, W, c) => { const m=(r.x0+r.x1)/2/W; return m>=AICOL[c][0] && m<AICOL[c][1]; };
+function readAiSection(def, lines, W, cv, progDate, progTime){
+  const starts = [];
+  lines.forEach((ln, i) => { const d = ln.rs.find(r => inAi(r, W, "date") && DATE.test(r.text||"")); if(d) starts.push(i); });
+  starts.forEach((i, n) => {
+    const end = n+1 < starts.length ? starts[n+1] : lines.length;
+    const rows = lines.slice(i, end).filter(ln => !ln.rs.some(r => /Event Total/i.test(r.text||"")));
+    const all = rows.flatMap(ln => ln.rs).sort((a,b) => a.y0 - b.y0 || a.x0 - b.x0);
+    const first = lines[i].rs;
+    const txt = r => (r?.text || "").trim();
+
+    // contact name + phone (phone may sit beside a wrapped name line)
+    const contactRuns = all.filter(r => inAi(r, W, "contact"));
+    const phoneRun = contactRuns.find(r => PHONE.test(txt(r).replace(/\s/g,"")) && /^[\d()\s.\-+]+$/.test(txt(r)));
+    const contact = contactRuns.filter(r => r !== phoneRun).map(txt).join(" ").replace(/\s+/g," ").replace(/,\s*$/,"").trim();
+
+    // confirmation can be fused to the attendee name in one text run ("GMWLEX2B Bail, Luiz")
+    const midText = first.filter(r => { const m=(r.x0+r.x1)/2/W; return m >= AICOL.conf[0] && m < AICOL.attendee[1]; })
+                         .sort((a,b)=>a.x0-b.x0).map(txt).join(" ");
+    const conf = (midText.match(/\bG[A-Z0-9]{7}\b/) || midText.match(/\b[A-Z0-9]{8}\b/) || [""])[0];
+    let attendee = midText.replace(conf, "").replace(/\s+/g," ").trim();
+    if(/,$/.test(attendee)){            // wrapped "BRANDT," / "NICOLE"
+      const next = rows[1]?.rs.find(r => inAi(r, W, "attendee"));
+      if(next && !/,/.test(txt(next))) attendee += " " + txt(next);
+    }
+
+    const b = { prog:def, date: progDate || txt(first.find(r => inAi(r, W, "date"))), time: progTime, suspect: [], source:"ai" };
+    b.tasks = { email:false, call:false, lock:false };
+    b.contact = contact;
+    b.name = contact || attendee;      // attendee names wrap mid-word in this export; contact is complete
+    b.conf = conf;
+    if(!conf) b.suspect.push("confirmation");
+    const pm = phoneRun ? txt(phoneRun).replace(/\s/g,"").match(PHONE) : null;
+    b.phone = pm ? `(${pm[1]}) ${pm[2]}-${pm[3]}` : "";
+    if(!pm) b.suspect.push("phone");
+    b.email = "";
+    b.emailMissing = true;              // this export has no email column
+    b.count = parseInt(txt(first.find(r => inAi(r, W, "party"))), 10) || 0;
+    if(!b.count) b.suspect.push("party size");
+    const bal = txt(first.find(r => inAi(r, W, "balance")));
+    if(bal && !/^\$?0\.00$/.test(bal)) b.balance = bal;
+    b.noteFlag = /^Y$/i.test(txt(first.find(r => inAi(r, W, "flag"))));
+
+    const top = Math.min(...all.map(r=>r.y0)) - 6, bot = Math.max(...all.map(r=>r.y1)) + 6;
+    b.crop = rowCrop(cv, W, top, bot, 0.84);
+    bookings.push(b);
+  });
 }
 
 /* ---------------- emails ---------------- */
@@ -1567,6 +1714,7 @@ function guestEmail(b){
 }
 function securityHtml(){
   const date=esc(activeBookings()[0]?.date || bookings[0]?.date || "");
+  if(dayMode === "operational") return securityHtmlOperational(date);
   const enabled=PROGRAMS.filter(p=>p.modes.includes(dayMode) && modePart(p.config?.security,dayMode,{}).enabled);
   const rows=enabled.map(p=>{
     const s=modePart(p.config.security,dayMode,{});
@@ -1577,6 +1725,23 @@ function securityHtml(){
   }).join("");
   const nonopNote=dayMode==="nonop" ? `<p><b>**Please be advised, our programs will all be doing the Killer Whale portion at 9:45AM and Orca trainers will more than likely call for extra assistance from security**</b></p>` : "";
   return `<div style="font-family:Calibri,Arial,sans-serif;font-size:15px;color:#1a1a1a;line-height:1.5"><p>Good morning, Security Team!</p><p>We will have guests participating in the following programs tomorrow <b>${date}</b></p>${rows}${nonopNote}${OP_EDUCATION_STAFF_SIGNATURE}</div>`;
+}
+function securityHtmlOperational(date){
+  const inc = activeBookings().filter(securityIncluded).sort((a,b) => minutes(arrivalTime(a)) - minutes(arrivalTime(b)));
+  const groups = [];
+  inc.forEach(b => {
+    const k = b.prog.key + "|" + b.time;
+    let g = groups.find(x => x.k === k);
+    if(!g){ g = { k, b, list:[] }; groups.push(g); }
+    g.list.push(b);
+  });
+  const rows = groups.map(({b, list}) => {
+    const gate = modePart(b.prog.config?.security, "operational", {}).gate || "";
+    const where = gate ? `${gate} (arrive ${arrivalTime(b)})` : `Arrive ${arrivalTime(b)}`;
+    const guests = list.map(x => `${esc(x.name || x.contact)} &mdash; party of ${x.count}`).join("<br>");
+    return `<p><b><u>${esc(where)}: ${esc(b.prog.name)} ${esc(b.time)}:</u></b><br>${guests}</p>`;
+  }).join("") || `<p>No programs arrive early enough to need Security tomorrow.</p>`;
+  return `<div style="font-family:Calibri,Arial,sans-serif;font-size:15px;color:#1a1a1a;line-height:1.5"><p>Good morning, Security Team!</p><p>We will have guests arriving before the park opens at <b>${esc(parkOpen)}</b> tomorrow <b>${date}</b> for the following programs:</p>${rows}${OP_EDUCATION_STAFF_SIGNATURE}</div>`;
 }
 function securitySubject(){ return `Specialty programs tomorrow ${activeBookings()[0]?.date || bookings[0]?.date || ""}`; }
 function updateWorkflow(){
@@ -1601,16 +1766,20 @@ function render(){
   if(!bookings.length){
     const seen = [...new Set(scanned.programs)].join(" · ") || "nothing";
     out.insertAdjacentHTML("beforeend",
-      `<div class="empty"><b>No recognized reservations found.</b>
+      `<div class="empty"><b>No reservations could be read from this report.</b>
        <div class="seen">Reader: ${scanned.mode === "ocr" ? "OCR fallback" : "PDF text"} · Programs detected: ${esc(seen)}</div>
-       <div class="modehint">If this report visibly contains tours, keep the PDF and send it back for parser tuning — the app will now tell us which read path failed.</div></div>`);
+       <div class="modehint">If this report visibly contains tours, keep the PDF and send it back for parser tuning.</div></div>`);
     return;
   }
   if(!list.length){
-    const seen = [...new Set(scanned.programs)].join(" · ") || "nothing";
+    const opDay = dayMode === "operational";
+    const slots = bookings.slice().sort((a,b) => minutes(a.time) - minutes(b.time)).reduce((acc,b) => {
+      const k = b.prog.name + "|" + b.time; if(!acc.some(x => x.k === k)) acc.push({k, b}); return acc; }, []);
+    const slotList = slots.map(({b}) => `<li><b>${esc(b.prog.name)}</b> ${esc(b.time || "?")} — guests arrive ${esc(arrivalTime(b) || "?")}</li>`).join("");
     out.insertAdjacentHTML("beforeend",
-      `<div class="empty">No reservations in this report match <b>${dayMode === "nonop" ? "Non-Operational" : "Operational"}</b> mode.
-       <div class="seen">Recognized programs: ${esc(seen)}</div><div class="modehint">Try switching Tomorrow's park status above.</div></div>`);
+      `<div class="empty"><b>${opDay ? `Nothing in this report arrives before the ${esc(parkOpen)} opening.` : "No reservations in this report need Non-Op prep."}</b>
+       <div class="seen">The report was read fine. Tours on it:</div><ul class="slotlist">${slotList}</ul>
+       <div class="modehint">${opDay ? "If the park opens later tomorrow, change the opening time above. Also check the report's date — it should be tomorrow's." : "Try switching Tomorrow's park status above."}</div></div>`);
     return;
   }
 
@@ -1657,7 +1826,8 @@ function render(){
   list.forEach(b => {
     const tasks = ensureTasks(b);
     const checkin = b.prog.checkin ? b.prog.checkin(b) : b.time;
-    const hasSecurity = securityKeys().includes(b.prog.key);
+    const hasSecurity = securityEligible(b);
+    const lead = dayMode === "operational" ? minsBeforeOpen(b) : null;
     const attachment = needsDirections(b);
     const callNotes = b.prog.notes(b);
     const card = document.createElement("div");
@@ -1666,7 +1836,10 @@ function render(){
       <div class="head">
         <span class="time">${esc(b.time || "?")}</span>
         <span class="prog">${esc(b.prog.name)}</span>
-        <span class="sub">check in ${esc(checkin)}</span>
+        <span class="sub">check in ${esc(checkin)}${dayMode === "operational" ? ` · ${esc(leadLabel(lead))}` : ""}</span>
+        ${b.prog.generic ? `<span class="flag">Not set up in Admin — generic email</span>` : ""}
+        ${b.noteFlag ? `<span class="flag">Reservation has a note — read it in Global Reservations</span>` : ""}
+        ${b.balance ? `<span class="flag">Balance ${esc(b.balance)}</span>` : ""}
         ${attachment ? `<span class="attach">Attachment: employee entrance directions</span>` : ""}
         ${b.suspect.length ? `<span class="flag">Check ${esc([...new Set(b.suspect)].join(" · "))}</span>` : ""}
         ${hasSecurity ? `<label class="inc"><input type="checkbox" data-a="inc" ${securityIncluded(b)?"checked":""}> on security email</label>` : ""}
@@ -1685,7 +1858,7 @@ function render(){
           <div><label>Guest</label><input type="text" data-f="name" value="${esc(b.name)}"></div>
           <div><label>Contact name</label><input type="text" data-f="contact" value="${esc(b.contact)}"></div>
           <div><label>Phone</label><input type="text" data-f="phone" value="${esc(b.phone)}" class="${b.suspect.includes("phone")?"suspect":""}"></div>
-          <div><label>Email</label><input type="text" data-f="email" value="${esc(b.email)}" class="${b.suspect.includes("email")?"suspect":""}"></div>
+          <div><label>Email</label><input type="text" data-f="email" value="${esc(b.email)}" ${b.emailMissing ? `placeholder="Not on this report — look up in Global Reservations"` : ""} class="${b.suspect.includes("email") || (b.emailMissing && !b.email) ?"suspect":""}"></div>
           <div><label>Party</label><input type="text" data-f="count" value="${esc(String(b.count))}" class="${b.suspect.includes("party size")?"suspect":""}"></div>
           <div><label>Confirmation</label><input type="text" data-f="conf" value="${esc(b.conf)}"></div>
         </div>
